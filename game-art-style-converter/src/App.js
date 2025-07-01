@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 
-const IMGBB_API_KEY = "90ae9dfd8119dd8c685f1c4c45b74f10";
+const IMGBB_API_KEY = "e8fbe4e8d60ad5c696c98a910924e923";
 const REPLICATE_API_TOKEN = process.env.REACT_APP_REPLICATE_API_TOKEN;
 
 export default function App() {
