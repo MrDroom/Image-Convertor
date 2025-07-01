@@ -1,41 +1,58 @@
 import React, { useState } from "react";
 
-const REPLICATE_API_TOKEN = "r8_Ai96E5BAzIKRaSWWH4mI99aVgqs87qS43UkcC";
+const IMGBB_API_KEY = "90ae9dfd8119dd8c685f1c4c45b74f10";
+const REPLICATE_API_TOKEN = process.env.REACT_APP_REPLICATE_API_TOKEN;
 
 export default function App() {
   const [baseImage, setBaseImage] = useState(null);
   const [referenceImage, setReferenceImage] = useState(null);
-  const [resultImage, setResultImage] = useState(null);
+  const [convertedImage, setConvertedImage] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  const handleFileChange = (e, setter) => {
+    const file = e.target.files[0];
+    if (file) {
+      setter(file);
+    }
+  };
 
   const toBase64 = (file) =>
     new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.readAsDataURL(file);
       reader.onload = () => resolve(reader.result);
-      reader.onerror = (e) => reject(e);
+      reader.onerror = reject;
     });
 
-  const handleFileChange = (e, setter) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    setter(file);
+  const uploadToImgBB = async (file) => {
+    const base64 = await toBase64(file);
+    const formData = new FormData();
+    formData.append("key", IMGBB_API_KEY);
+    formData.append("image", base64.split(",")[1]);
+
+    const res = await fetch("https://api.imgbb.com/1/upload", {
+      method: "POST",
+      body: formData,
+    });
+    const data = await res.json();
+    if (data.success) return data.data.url;
+    else throw new Error("ImgBB upload failed");
   };
 
   const handleConvert = async () => {
     if (!baseImage || !referenceImage) {
-      alert("Please upload both images.");
+      alert("Upload both images.");
       return;
     }
 
     setLoading(true);
     setError(null);
-    setResultImage(null);
+    setConvertedImage(null);
 
     try {
-      const baseBase64 = await toBase64(baseImage);
-      const styleBase64 = await toBase64(referenceImage);
+      const baseUrl = await uploadToImgBB(baseImage);
+      const refUrl = await uploadToImgBB(referenceImage);
 
       const res = await fetch("https://api.replicate.com/v1/predictions", {
         method: "POST",
@@ -47,140 +64,71 @@ export default function App() {
           version:
             "e5ee08e492bc65006e53f2f93e325b7880b10e6c268d36c1b2efbba271a7b6a1",
           input: {
-            content: baseBase64,
-            style: styleBase64,
+            content: baseUrl,
+            style: refUrl,
           },
         }),
       });
 
-      if (!res.ok) throw new Error(`Request failed: ${res.status}`);
-
       let prediction = await res.json();
 
+      // Polling
       while (
         prediction.status !== "succeeded" &&
         prediction.status !== "failed"
       ) {
-        await new Promise((r) => setTimeout(r, 2000));
+        await new Promise((res) => setTimeout(res, 2000));
         const pollRes = await fetch(
           `https://api.replicate.com/v1/predictions/${prediction.id}`,
           {
-            headers: { Authorization: `Token ${REPLICATE_API_TOKEN}` },
+            headers: {
+              Authorization: `Token ${REPLICATE_API_TOKEN}`,
+            },
           }
         );
-        if (!pollRes.ok) throw new Error("Polling failed");
         prediction = await pollRes.json();
       }
 
       if (prediction.status === "succeeded") {
-        setResultImage(prediction.output);
+        setConvertedImage(prediction.output);
       } else {
         setError("Conversion failed.");
       }
     } catch (e) {
-      setError(e.message || "Error occurred");
+      setError("Error: " + e.message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div
-      style={{
-        fontFamily: "sans-serif",
-        maxWidth: 480,
-        margin: "30px auto",
-        padding: 20,
-        border: "1px solid #ccc",
-        borderRadius: 8,
-      }}
-    >
-      <h2 style={{ textAlign: "center" }}>Simple Game Art Style Converter</h2>
+    <div style={{ fontFamily: "sans-serif", padding: 20, maxWidth: 600, margin: "0 auto" }}>
+      <h2>Game Art Style Converter</h2>
 
-      <div>
-        <label>
-          Base Image:
-          <input
-            type="file"
-            accept="image/*"
-            onChange={(e) => handleFileChange(e, setBaseImage)}
-          />
-        </label>
-        {baseImage && (
-          <img
-            src={URL.createObjectURL(baseImage)}
-            alt="Base Preview"
-            style={{ width: "100%", marginTop: 10, borderRadius: 6 }}
-          />
-        )}
-      </div>
+      <label>
+        Base Image:
+        <input type="file" accept="image/*" onChange={(e) => handleFileChange(e, setBaseImage)} />
+      </label>
+      {baseImage && <img src={URL.createObjectURL(baseImage)} alt="Base" style={{ width: "100%", marginTop: 10 }} />}
 
-      <div style={{ marginTop: 20 }}>
-        <label>
-          Reference Style Image:
-          <input
-            type="file"
-            accept="image/*"
-            onChange={(e) => handleFileChange(e, setReferenceImage)}
-          />
-        </label>
-        {referenceImage && (
-          <img
-            src={URL.createObjectURL(referenceImage)}
-            alt="Style Preview"
-            style={{ width: "100%", marginTop: 10, borderRadius: 6 }}
-          />
-        )}
-      </div>
+      <label style={{ marginTop: 20 }}>
+        Reference Style Image:
+        <input type="file" accept="image/*" onChange={(e) => handleFileChange(e, setReferenceImage)} />
+      </label>
+      {referenceImage && <img src={URL.createObjectURL(referenceImage)} alt="Reference" style={{ width: "100%", marginTop: 10 }} />}
 
-      <button
-        onClick={handleConvert}
-        disabled={loading}
-        style={{
-          marginTop: 20,
-          width: "100%",
-          padding: 12,
-          backgroundColor: loading ? "#aaa" : "#007bff",
-          color: "white",
-          border: "none",
-          borderRadius: 6,
-          cursor: loading ? "not-allowed" : "pointer",
-          fontSize: 16,
-        }}
-      >
-        {loading ? "Converting..." : "Convert"}
+      <button onClick={handleConvert} disabled={loading} style={{ marginTop: 20, width: "100%", padding: 10 }}>
+        {loading ? "Converting..." : "Convert Image"}
       </button>
 
-      {error && (
-        <p style={{ color: "red", marginTop: 15, textAlign: "center" }}>
-          {error}
-        </p>
-      )}
+      {error && <p style={{ color: "red", marginTop: 10 }}>{error}</p>}
 
-      {resultImage && (
+      {convertedImage && (
         <div style={{ marginTop: 30 }}>
-          <h3 style={{ textAlign: "center" }}>Converted Image</h3>
-          <img
-            src={resultImage}
-            alt="Converted Result"
-            style={{ width: "100%", borderRadius: 6, marginTop: 10 }}
-          />
-          <a
-            href={resultImage}
-            download="converted-game-art.png"
-            style={{
-              display: "block",
-              marginTop: 12,
-              padding: 10,
-              textAlign: "center",
-              backgroundColor: "#28a745",
-              color: "white",
-              borderRadius: 6,
-              textDecoration: "none",
-              fontWeight: "bold",
-            }}
-          >
-            Download Image
+          <h3>Converted Image:</h3>
+          <img src={convertedImage} alt="Converted" style={{ width: "100%", marginTop: 10 }} />
+          <a href={convertedImage} download="converted-image.png" style={{ display: "block", marginTop: 10 }}>
+            Download
           </a>
         </div>
       )}
